@@ -6,41 +6,40 @@ const path = require('path');
 
 const app = express();
 
-// עדכון CORS: מאפשר לכל האתרים (כולל Vercel שלך) לגשת לשרת
+// פתיחת השרת לבקשות מכל מקום (פותר את בעיית ה"אדום" ב-Console)
 app.use(cors());
 app.use(bodyParser.json());
 
-// נתיב זמני לשמירת נתונים בזיכרון (כדי למנוע שגיאות כתיבה לקבצים ב-Render)
+// נתיב בדיקה - כדי שנדע שהשרת עובד
+app.get('/', (req, res) => {
+    res.send('Bashert Server is Running!');
+});
+
+// שמירת נתונים בזיכרון (כדי שהאתר יגיב מהר גם ב-Render)
 let feedbacksMemory = [];
 
-// טעינה ראשונית מקובץ אם הוא קיים (למקרה שהשרת רץ מקומית)
-if (fs.existsSync('feedbacks.txt')) {
+// ניסיון לקרוא נתונים קיימים אם השרת עולה מחדש
+const DB_FILE = 'feedbacks.txt';
+if (fs.existsSync(DB_FILE)) {
     try {
-        const data = fs.readFileSync('feedbacks.txt', 'utf8');
+        const data = fs.readFileSync(DB_FILE, 'utf8');
         feedbacksMemory = data.split('\n')
             .filter(line => line.trim() !== '')
             .map(line => JSON.parse(line));
+        console.log(`Loaded ${feedbacksMemory.length} feedbacks from file`);
     } catch (e) {
         console.log("Starting with empty memory");
     }
 }
 
-// 1. נתיב לקבלת ההגדרות
+// 1. קבלת הגדרות (למשל לינק לגוגל)
 app.get('/api/config', (req, res) => {
-    // ב-Render הקובץ הזה כנראה לא יהיה קיים באותו נתיב, אז נחזיר ערך ברירת מחדל אם הוא נכשל
-    try {
-        const configPath = path.join(__dirname, '../automations/config.json');
-        if (fs.existsSync(configPath)) {
-            const configData = fs.readFileSync(configPath, 'utf8');
-            return res.json(JSON.parse(configData));
-        }
-        res.json({ googleLink: "https://google.com" }); // לינק ברירת מחדל
-    } catch (error) {
-        res.json({ googleLink: "https://google.com" });
-    }
+    res.json({ 
+        googleLink: "https://www.google.com/search?q=bashert+restaurant+reviews" 
+    });
 });
 
-// 2. נתיב לקבלת משוב חדש
+// 2. שמירת משוב חדש (POST)
 app.post('/api/feedback', (req, res) => {
     const feedback = { 
         id: Date.now(), 
@@ -48,24 +47,24 @@ app.post('/api/feedback', (req, res) => {
         name: req.body.name || "אנונימי",
         phone: req.body.phone || "לא צוין",
         issue: req.body.issue || "כללי",
-        comment: req.body.comment || "הלקוח לא הוסיף הערה מילולית.",
+        comment: req.body.comment || "ללא הערה",
         rating: req.body.rating 
     };
 
     feedbacksMemory.push(feedback);
     
-    // ננסה גם לכתוב לקובץ (יעבוד רק מקומית, ב-Render זה ימחק כל כמה זמן)
+    // ניסיון גיבוי לקובץ (ב-Render זה זמני, אבל טוב שיהיה)
     try {
-        fs.appendFileSync('feedbacks.txt', JSON.stringify(feedback) + '\n');
+        fs.appendFileSync(DB_FILE, JSON.stringify(feedback) + '\n');
     } catch (e) {
-        console.log("Could not write to file, kept in memory");
+        console.error("File save error:", e.message);
     }
 
-    console.log("✅ משוב חדש התקבל:", feedback.name);
+    console.log("✅ משוב חדש התקבל:", feedback.name, "דירוג:", feedback.rating);
     res.status(200).send({ message: "Success", feedback });
 });
 
-// 3. נתיב לניהול (Admin)
+// 3. נתיב לאדמין - סטטיסטיקה ומשובים
 app.get('/api/admin/stats', (req, res) => {
     const issues = { 'שירות': 0, 'אוכל': 0, 'ניקיון': 0, 'אחר': 0 };
     let sumRating = 0;
@@ -81,12 +80,12 @@ app.get('/api/admin/stats', (req, res) => {
             avgRating: feedbacksMemory.length ? (sumRating / feedbacksMemory.length).toFixed(1) : 0,
             issues: issues
         },
-        feedbacks: [...feedbacksMemory].reverse().slice(0, 20)
+        feedbacks: [...feedbacksMemory].reverse().slice(0, 30) // מחזיר את ה-30 האחרונים
     });
 });
 
-// חשוב ל-Render: להשתמש בפורט שהם נותנים או ב-5000
+// שימוש בפורט דינמי עבור Render
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`🚀 השרת של באשערט רץ בפורט ${PORT}`);
+    console.log(`🚀 השרת של באשערט באוויר בפורט ${PORT}`);
 });
