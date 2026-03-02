@@ -5,78 +5,88 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
+
+// עדכון CORS: מאפשר לכל האתרים (כולל Vercel שלך) לגשת לשרת
 app.use(cors());
 app.use(bodyParser.json());
 
-// 1. נתיב לקבלת ההגדרות (מה שהפייתון מעדכן ב-config.json)
+// נתיב זמני לשמירת נתונים בזיכרון (כדי למנוע שגיאות כתיבה לקבצים ב-Render)
+let feedbacksMemory = [];
+
+// טעינה ראשונית מקובץ אם הוא קיים (למקרה שהשרת רץ מקומית)
+if (fs.existsSync('feedbacks.txt')) {
+    try {
+        const data = fs.readFileSync('feedbacks.txt', 'utf8');
+        feedbacksMemory = data.split('\n')
+            .filter(line => line.trim() !== '')
+            .map(line => JSON.parse(line));
+    } catch (e) {
+        console.log("Starting with empty memory");
+    }
+}
+
+// 1. נתיב לקבלת ההגדרות
 app.get('/api/config', (req, res) => {
+    // ב-Render הקובץ הזה כנראה לא יהיה קיים באותו נתיב, אז נחזיר ערך ברירת מחדל אם הוא נכשל
     try {
         const configPath = path.join(__dirname, '../automations/config.json');
-        const configData = fs.readFileSync(configPath, 'utf8');
-        res.json(JSON.parse(configData));
+        if (fs.existsSync(configPath)) {
+            const configData = fs.readFileSync(configPath, 'utf8');
+            return res.json(JSON.parse(configData));
+        }
+        res.json({ googleLink: "https://google.com" }); // לינק ברירת מחדל
     } catch (error) {
-        console.error("שגיאה בקריאת קובץ ההגדרות:", error);
-        res.status(500).send({ error: "Could not read config file" });
+        res.json({ googleLink: "https://google.com" });
     }
 });
 
-// 2. נתיב לקבלת משוב חדש ושמירתו (כולל ההערות המפורטות)
+// 2. נתיב לקבלת משוב חדש
 app.post('/api/feedback', (req, res) => {
     const feedback = { 
         id: Date.now(), 
         date: new Date().toLocaleString('he-IL'), 
-        name: req.body.name,
-        phone: req.body.phone,
-        issue: req.body.issue,
+        name: req.body.name || "אנונימי",
+        phone: req.body.phone || "לא צוין",
+        issue: req.body.issue || "כללי",
         comment: req.body.comment || "הלקוח לא הוסיף הערה מילולית.",
         rating: req.body.rating 
     };
 
+    feedbacksMemory.push(feedback);
+    
+    // ננסה גם לכתוב לקובץ (יעבוד רק מקומית, ב-Render זה ימחק כל כמה זמן)
     try {
-        // שמירת המשוב כשורת JSON בתוך קובץ הטקסט
         fs.appendFileSync('feedbacks.txt', JSON.stringify(feedback) + '\n');
-        console.log("✅ משוב חדש נשמר בהצלחה:", feedback.name);
-        res.status(200).send({ message: "Success" });
-    } catch (error) {
-        console.error("שגיאה בשמירת המשוב:", error);
-        res.status(500).send({ error: "Failed to save feedback" });
+    } catch (e) {
+        console.log("Could not write to file, kept in memory");
     }
+
+    console.log("✅ משוב חדש התקבל:", feedback.name);
+    res.status(200).send({ message: "Success", feedback });
 });
 
-// 3. נתיב לשליחת הסטטיסטיקה והמשובים ללוח הניהול (Admin)
+// 3. נתיב לניהול (Admin)
 app.get('/api/admin/stats', (req, res) => {
-    try {
-        if (!fs.existsSync('feedbacks.txt')) {
-            return res.json({ stats: { total: 0, avgRating: 0, issues: {} }, feedbacks: [] });
-        }
+    const issues = { 'שירות': 0, 'אוכל': 0, 'ניקיון': 0, 'אחר': 0 };
+    let sumRating = 0;
 
-        const data = fs.readFileSync('feedbacks.txt', 'utf8');
-        const lines = data.split('\n').filter(line => line.trim() !== '');
-        const feedbacks = lines.map(line => JSON.parse(line));
-        
-        const issues = { 'שירות': 0, 'אוכל': 0, 'ניקיון': 0, 'אחר': 0 };
-        let sumRating = 0;
+    feedbacksMemory.forEach(f => {
+        if (issues[f.issue] !== undefined) issues[f.issue]++;
+        sumRating += f.rating;
+    });
 
-        feedbacks.forEach(f => {
-            if (issues[f.issue] !== undefined) issues[f.issue]++;
-            sumRating += f.rating;
-        });
-
-        res.json({
-            stats: {
-                total: feedbacks.length,
-                avgRating: feedbacks.length ? (sumRating / feedbacks.length).toFixed(1) : 0,
-                issues: issues
-            },
-            feedbacks: feedbacks.reverse().slice(0, 10) // מציג את 10 המשובים האחרונים
-        });
-    } catch (error) {
-        console.error("שגיאה בעיבוד הסטטיסטיקה:", error);
-        res.status(500).send({ error: "Stats calculation failed" });
-    }
+    res.json({
+        stats: {
+            total: feedbacksMemory.length,
+            avgRating: feedbacksMemory.length ? (sumRating / feedbacksMemory.length).toFixed(1) : 0,
+            issues: issues
+        },
+        feedbacks: [...feedbacksMemory].reverse().slice(0, 20)
+    });
 });
 
-const PORT = 5000;
+// חשוב ל-Render: להשתמש בפורט שהם נותנים או ב-5000
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 השרת של באשערט רץ בפורט ${PORT}`);
 });
