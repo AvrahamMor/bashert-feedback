@@ -15,11 +15,23 @@ app.get('/', (req, res) => {
     res.send('Bashert Server is Running!');
 });
 
+// נתיב לבדיקת זיכרון
+app.get('/api/memory', (req, res) => {
+    const mem = process.memoryUsage();
+    res.json({
+        rss: `${(mem.rss / 1024 / 1024).toFixed(2)} MB`,
+        heapUsed: `${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`,
+        heapTotal: `${(mem.heapTotal / 1024 / 1024).toFixed(2)} MB`,
+        external: `${(mem.external / 1024 / 1024).toFixed(2)} MB`,
+        feedbacksCount: feedbacksMemory.length
+    });
+});
+
 // שמירת נתונים בזיכרון (כדי שהאתר יגיב מהר גם ב-Render)
 let feedbacksMemory = [];
 
 // ניסיון לקרוא נתונים קיימים אם השרת עולה מחדש
-const DB_FILE = 'feedbacks.txt';
+const DB_FILE = path.join(__dirname, 'feedbacks.txt');
 if (fs.existsSync(DB_FILE)) {
     try {
         const data = fs.readFileSync(DB_FILE, 'utf8');
@@ -53,6 +65,11 @@ app.post('/api/feedback', (req, res) => {
 
     feedbacksMemory.push(feedback);
     
+    // הגבלת הזיכרון - שמור רק את 1000 המשובים האחרונים
+    if (feedbacksMemory.length > 1000) {
+        feedbacksMemory = feedbacksMemory.slice(-1000);
+    }
+    
     // ניסיון גיבוי לקובץ (ב-Render זה זמני, אבל טוב שיהיה)
     try {
         fs.appendFileSync(DB_FILE, JSON.stringify(feedback) + '\n');
@@ -73,6 +90,14 @@ app.get('/api/admin/stats', (req, res) => {
         if (issues[f.issue] !== undefined) issues[f.issue]++;
         sumRating += f.rating;
     });
+
+    // תמיד שמור את הקובץ מחדש להיות בטוח שהוא עדכני
+    try {
+        const allFeedbacks = feedbacksMemory.map(f => JSON.stringify(f)).join('\n');
+        fs.writeFileSync(DB_FILE, allFeedbacks + (feedbacksMemory.length > 0 ? '\n' : ''));
+    } catch (e) {
+        console.error("File update error:", e.message);
+    }
 
     res.json({
         stats: {
