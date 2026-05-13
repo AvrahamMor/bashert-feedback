@@ -3,8 +3,11 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const app = express();
+
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 // פתיחת השרת לבקשות מכל מקום (פותר את בעיית ה"אדום" ב-Console)
 app.use(cors());
@@ -81,8 +84,25 @@ app.post('/api/feedback', (req, res) => {
     res.status(200).send({ message: "Success", feedback });
 });
 
-// 3. נתיב לאדמין - סטטיסטיקה ומשובים
+// 3. נתיב לאדמין - אימות וספק נתונים
+app.post('/api/admin/login', (req, res) => {
+    if (!ADMIN_PASSWORD) {
+        return res.status(500).json({ message: 'Admin password not configured.' });
+    }
+
+    const password = req.body.password;
+    if (!password || password !== ADMIN_PASSWORD) {
+        return res.status(401).json({ message: 'Invalid admin password.' });
+    }
+
+    res.json({ success: true });
+});
+
 app.get('/api/admin/stats', (req, res) => {
+    if (!ADMIN_PASSWORD || req.get('x-admin-password') !== ADMIN_PASSWORD) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+
     const issues = { 'שירות': 0, 'אוכל': 0, 'ניקיון': 0, 'אחר': 0 };
     let sumRating = 0;
 

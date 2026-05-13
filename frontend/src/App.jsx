@@ -11,6 +11,50 @@ const GOOGLE_REVIEWS_URL = "https://www.google.com/search?sca_esv=26102ee7b85ee8
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+const AdminLogin = ({ onLogin, error }) => {
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!password.trim()) return;
+    setIsLoading(true);
+    await onLogin(password);
+    setIsLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-[#f4f4f4] p-8" dir="rtl">
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-gray-200 p-8">
+        <h2 className="text-3xl font-black text-gray-900 mb-6">כניסת מנהל</h2>
+        <p className="text-gray-600 mb-6">הזן את הסיסמה כדי לגשת ל-Admin Dashboard.</p>
+        <input
+          type="password"
+          value={password}
+          placeholder="סיסמה"
+          className="w-full p-4 rounded-2xl border border-gray-200 mb-4 outline-none focus:ring-2 focus:ring-[#d4af37]"
+          onChange={e => setPassword(e.target.value)}
+        />
+        {error && <div className="text-red-600 font-bold mb-4">{error}</div>}
+        <button
+          onClick={handleSubmit}
+          disabled={isLoading}
+          className="w-full bg-[#1a1a1a] text-[#d4af37] py-4 rounded-2xl font-black text-lg hover:opacity-90 transition"
+        >
+          {isLoading ? 'טוען...' : 'התחבר'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const AdminRoute = ({ authenticated, adminPassword, onLogin, onLogout, loginError }) => {
+  if (!authenticated) {
+    return <AdminLogin onLogin={onLogin} error={loginError} />;
+  }
+
+  return <AdminDashboard adminPassword={adminPassword} onLogout={onLogout} />;
+};
+
 const CustomerView = () => {
   const [rating, setRating] = useState(0);
   const [showFeedback, setShowFeedback] = useState(false);
@@ -108,16 +152,25 @@ const CustomerView = () => {
   );
 };
 
-const AdminDashboard = () => {
+const AdminDashboard = ({ adminPassword, onLogout }) => {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/admin/stats`)
-      .then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); })
+    if (!adminPassword) {
+      setError("Unauthorized");
+      return;
+    }
+
+    fetch(`${API_BASE_URL}/api/admin/stats`, {
+      headers: {
+        'x-admin-password': adminPassword
+      }
+    })
+      .then(r => { if (!r.ok) throw new Error("Unauthorized"); return r.json(); })
       .then(setData)
       .catch(err => setError(err.message));
-  }, []);
+  }, [adminPassword]);
 
   if (error) return <div className="h-screen flex items-center justify-center bg-red-50 text-red-600 font-bold">שגיאה בחיבור לשרת</div>;
   if (!data) return <div className="h-screen w-screen flex items-center justify-center bg-[#1a1a1a] text-[#d4af37] text-2xl animate-pulse font-black italic">טוען נתונים...</div>;
@@ -129,8 +182,13 @@ const AdminDashboard = () => {
           <img src={logo} alt="Logo" className="w-12 md:w-20" />
           <h1 className="text-xl md:text-3xl font-black text-gray-900">ניהול באשערט <span className="text-[#d4af37]">PRO</span></h1>
         </div>
-        <div className="bg-black text-[#d4af37] px-4 py-2 rounded-lg flex items-center gap-2 font-bold text-xs uppercase tracking-widest">
-          <ShieldCheck size={16}/> Admin Mode
+        <div className="flex items-center gap-3">
+          <button onClick={onLogout} className="px-4 py-2 bg-[#1a1a1a] text-[#d4af37] rounded-lg font-bold text-xs uppercase tracking-widest hover:opacity-90 transition">
+            יציאה
+          </button>
+          <div className="bg-black text-[#d4af37] px-4 py-2 rounded-lg flex items-center gap-2 font-bold text-xs uppercase tracking-widest">
+            <ShieldCheck size={16}/> Admin Mode
+          </div>
         </div>
       </header>
 
@@ -188,11 +246,68 @@ const StatCard = ({ title, value, color }) => (
 );
 
 export default function App() {
+  const [adminAuthenticated, setAdminAuthenticated] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [loginError, setLoginError] = useState(null);
+
+  useEffect(() => {
+    const savedAuth = sessionStorage.getItem('admin-authenticated');
+    const savedPassword = sessionStorage.getItem('admin-password');
+
+    if (savedAuth === 'true' && savedPassword) {
+      setAdminAuthenticated(true);
+      setAdminPassword(savedPassword);
+    }
+  }, []);
+
+  const handleAdminLogin = async (password) => {
+    setLoginError(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body?.message || 'Invalid password');
+      }
+
+      setAdminAuthenticated(true);
+      setAdminPassword(password);
+      sessionStorage.setItem('admin-authenticated', 'true');
+      sessionStorage.setItem('admin-password', password);
+    } catch (err) {
+      setLoginError(err.message || 'שגיאה בהתחברות');
+    }
+  };
+
+  const handleAdminLogout = () => {
+    setAdminAuthenticated(false);
+    setAdminPassword('');
+    setLoginError(null);
+    sessionStorage.removeItem('admin-authenticated');
+    sessionStorage.removeItem('admin-password');
+  };
+
   return (
     <Router>
       <Routes>
         <Route path="/" element={<CustomerView />} />
-        <Route path="/admin" element={<AdminDashboard />} />
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute
+              authenticated={adminAuthenticated}
+              adminPassword={adminPassword}
+              onLogin={handleAdminLogin}
+              onLogout={handleAdminLogout}
+              loginError={loginError}
+            />
+          }
+        />
       </Routes>
     </Router>
   );
