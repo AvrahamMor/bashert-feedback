@@ -1,3 +1,4 @@
+// הגדרות Tailwind CSS לעיצוב האפליקציה
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [

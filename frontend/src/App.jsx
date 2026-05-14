@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { Users, Star, MessageCircle, TrendingUp, BarChart3, ShieldCheck, Loader2, Phone } from 'lucide-react';
 import logo from './assets/logo.png';
 
@@ -47,6 +47,7 @@ const AdminLogin = ({ onLogin, error }) => {
   );
 };
 
+// רכיב ניתוב אדמין - בודק אם המשתמש מאומת ומחזיר את הרכיב המתאים
 const AdminRoute = ({ authenticated, adminPassword, onLogin, onLogout, loginError }) => {
   if (!authenticated) {
     return <AdminLogin onLogin={onLogin} error={loginError} />;
@@ -55,12 +56,15 @@ const AdminRoute = ({ authenticated, adminPassword, onLogin, onLogout, loginErro
   return <AdminDashboard adminPassword={adminPassword} onLogout={onLogout} />;
 };
 
+// רכיב תצוגת לקוח - טופס דירוג ומשוב
 const CustomerView = () => {
+  // הגדרת מצבים לטופס
   const [rating, setRating] = useState(0);
   const [showFeedback, setShowFeedback] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [formData, setFormData] = useState({ name: "", phone: "", issue: "", comment: "" });
 
+  // פונקציה לטיפול בדירוג
   const handleRating = (rate) => {
     setRating(rate);
     setTimeout(() => {
@@ -73,6 +77,7 @@ const CustomerView = () => {
     }, 500);
   };
 
+  // פונקציה לשליחת המשוב
   const handleSubmit = async () => {
     if (!formData.name || formData.phone.length < 10) return alert("נא למלא שם וטלפון תקין");
     
@@ -99,6 +104,7 @@ const CustomerView = () => {
     }
   };
 
+  // רינדור רכיב התצוגה ללקוח
   return (
     <div className="min-h-screen w-screen flex flex-col md:flex-row bg-white overflow-x-hidden" dir="rtl">
       <div className="w-full md:w-1/2 bg-[#1a1a1a] flex flex-col items-center justify-center p-8 md:p-12">
@@ -152,104 +158,259 @@ const CustomerView = () => {
   );
 };
 
+// רכיב לוח בקרה אדמין
 const AdminDashboard = ({ adminPassword, onLogout }) => {
+  // הגדרת מצבים לנתונים, שגיאות, רענון ועיצוב
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [theme, setTheme] = useState('dark');
 
+  // הגדרת עיצוב לפי ערכת נושא
+  const isDark = theme === 'dark';
+  const themeStyles = {
+    root: isDark ? 'bg-[#0b0b0f] text-white' : 'bg-slate-100 text-slate-950',
+    header: isDark ? 'bg-slate-950/95 border-white/10 text-white' : 'bg-white/95 border-slate-200 text-slate-950',
+    panel: isDark ? 'bg-slate-950/90 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-950',
+    panelAlt: isDark ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200 text-slate-950',
+    card: isDark ? 'bg-slate-950/90 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-950',
+    muted: isDark ? 'text-slate-400' : 'text-slate-500',
+    infoBox: isDark ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200 text-slate-950',
+    iconButton: isDark ? 'bg-white text-slate-950 hover:bg-slate-200' : 'bg-slate-950 text-white hover:bg-slate-900'
+  };
+
+  // הגדרת מחלקות CSS לפי ערכת נושא
+  const statCardClass = `${themeStyles.card} p-5 rounded-3xl shadow-2xl border flex flex-col gap-4 hover:shadow-slate-800 transition-shadow`;
+  const panelClass = `${themeStyles.panel} rounded-[32px] shadow-2xl p-6`;
+  const panelAltClass = `${themeStyles.panelAlt} rounded-[32px] shadow-2xl p-6`;
+  const infoBoxClass = `${themeStyles.infoBox} rounded-3xl p-5 backdrop-blur-sm border flex flex-col gap-3`;
+
+  // פונקציה לטעינת סטטיסטיקות
+  const fetchStats = async () => {
+    if (!adminPassword) return;
+    try {
+      setIsRefreshing(true);
+      const response = await fetch(`${API_BASE_URL}/api/admin/stats`, {
+        headers: {
+          'x-admin-password': adminPassword
+        }
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body?.message || 'Unauthorized');
+      }
+
+      const payload = await response.json();
+      setData(payload);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // טעינת נתונים בעת טעינת הרכיב והגדרת עדכון אוטומטי
   useEffect(() => {
     if (!adminPassword) {
-      setError("Unauthorized");
+      setError('Unauthorized');
       return;
     }
 
-    fetch(`${API_BASE_URL}/api/admin/stats`, {
-      headers: {
-        'x-admin-password': adminPassword
-      }
-    })
-      .then(r => { if (!r.ok) throw new Error("Unauthorized"); return r.json(); })
-      .then(setData)
-      .catch(err => setError(err.message));
+    fetchStats();
+    const interval = setInterval(fetchStats, 5000);
+    return () => clearInterval(interval);
   }, [adminPassword]);
 
-  if (error) return <div className="h-screen flex items-center justify-center bg-red-50 text-red-600 font-bold">שגיאה בחיבור לשרת</div>;
+  // בדיקת שגיאות וטעינה
+  if (error) return <div className="h-screen w-screen flex items-center justify-center bg-red-50 text-red-600 font-bold">שגיאה בחיבור לשרת: {error}</div>;
   if (!data) return <div className="h-screen w-screen flex items-center justify-center bg-[#1a1a1a] text-[#d4af37] text-2xl animate-pulse font-black italic">טוען נתונים...</div>;
 
+  // עיבוד נתונים לגרפים
+  const issueData = Object.entries(data.stats.issues).map(([name, value]) => ({ name, value }));
+  const ratingData = [1, 2, 3, 4, 5].map(rate => ({ rating: `${rate}★`, count: data.feedbacks.filter(f => f.rating === rate).length }));
+  const trendData = [...data.feedbacks].slice(0, 12).reverse().map((f, index) => ({
+    label: f.date.split(',')[0],
+    rating: f.rating,
+    index: index + 1
+  }));
+  const positivePercent = data.stats.total ? Math.round((data.feedbacks.filter(f => f.rating >= 4).length / data.stats.total) * 100) : 0;
+  const bestIssue = issueData.reduce((best, current) => (current.value > best.value ? current : best), { name: 'אף אחד', value: 0 });
+
+  // רינדור רכיב לוח הבקרה
   return (
-    <div className="min-h-screen w-full bg-[#f4f4f4] flex flex-col overflow-x-hidden" dir="rtl">
-      <header className="w-full bg-white border-b p-4 md:p-6 flex flex-col md:flex-row justify-between items-center gap-4 px-6 md:px-12 sticky top-0 z-50">
+    <div className={`min-h-screen w-full ${themeStyles.root} flex flex-col overflow-x-hidden transition-colors duration-500`} dir="rtl">
+      <header className={`w-full ${themeStyles.header} backdrop-blur-xl border-b p-4 md:p-6 flex flex-col md:flex-row justify-between items-center gap-4 px-4 sm:px-6 md:px-12 sticky top-0 z-50 transition-colors duration-500`}>
         <div className="flex items-center gap-4">
-          <img src={logo} alt="Logo" className="w-12 md:w-20" />
-          <h1 className="text-xl md:text-3xl font-black text-gray-900">ניהול באשערט <span className="text-[#d4af37]">PRO</span></h1>
+          <img src={logo} alt="Logo" className="w-14 md:w-20" />
+          <div>
+            <h1 className="text-2xl md:text-4xl font-black tracking-tight">Bashert Admin</h1>
+            <p className={`text-sm mt-1 ${themeStyles.muted}`}>לוח בקרה מרכזי הכולל עדכון חי של נתוני משובים</p>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={onLogout} className="px-4 py-2 bg-[#1a1a1a] text-[#d4af37] rounded-lg font-bold text-xs uppercase tracking-widest hover:opacity-90 transition">
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <button onClick={fetchStats} className="px-5 py-3 bg-[#d4af37] text-slate-950 rounded-2xl font-bold uppercase tracking-[0.18em] hover:bg-[#c19f31] transition flex items-center justify-center gap-2">
+            {isRefreshing ? 'מרענן...' : 'רענון נתונים'}
+          </button>
+          <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className={`px-5 py-3 rounded-2xl font-bold uppercase tracking-[0.18em] transition ${themeStyles.iconButton}`}>
+            {isDark ? '☀️ Light' : '🌑 Dark'}
+          </button>
+          <button onClick={onLogout} className={`px-5 py-3 rounded-2xl font-semibold transition ${isDark ? 'border border-white/10 bg-slate-900/90 text-white hover:bg-slate-800' : 'border border-slate-200 bg-white text-slate-950 hover:bg-slate-50'}`}>
             יציאה
           </button>
-          <div className="bg-black text-[#d4af37] px-4 py-2 rounded-lg flex items-center gap-2 font-bold text-xs uppercase tracking-widest">
-            <ShieldCheck size={16}/> Admin Mode
-          </div>
         </div>
       </header>
 
-      <main className="p-4 md:p-8 space-y-8">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
-          <StatCard title="משובים" value={data.stats.total} color="bg-blue-600" />
-          <StatCard title="ממוצע" value={data.stats.avgRating} color="bg-[#d4af37]" />
-          <StatCard title="מגמה" value="+15%" color="bg-green-600" />
-          <StatCard title="שביעות רצון" value="92%" color="bg-purple-600" />
-        </div>
+      <main className="w-full max-w-[1600px] mx-auto p-4 md:p-8 space-y-8">
+        <section className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <StatCard cardClass={statCardClass} title="משובים" value={data.stats.total} description="סה״כ משובים" color="bg-gradient-to-br from-sky-500 to-indigo-600" />
+          <StatCard cardClass={statCardClass} title="דירוג ממוצע" value={data.stats.avgRating} description="מבוסס על נתונים חיים" color="bg-gradient-to-br from-amber-500 to-orange-600" />
+          <StatCard cardClass={statCardClass} title="חיוביות" value={`${positivePercent}%`} description="משובים 4-5 כוכבים" color="bg-gradient-to-br from-emerald-500 to-teal-600" />
+          <StatCard cardClass={statCardClass} title="קטגוריה מובילה" value={bestIssue.name} description={`${bestIssue.value} משובים`} color="bg-gradient-to-br from-violet-500 to-fuchsia-600" />
+        </section>
 
-        <div className="bg-white p-6 md:p-10 rounded-3xl shadow-sm border border-gray-100">
-          <h3 className="text-2xl font-black mb-8 border-b pb-4 text-gray-900">ביקורות אחרונות</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className={`${panelClass}`}>
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <div>
+                <p className={`text-sm uppercase tracking-[0.3em] ${themeStyles.muted}`}>חלוקת נושאים</p>
+                <h2 className="text-3xl font-black mt-2">איפה צריך לפעול עכשיו?</h2>
+              </div>
+              <span className={`text-sm ${themeStyles.muted}`}>מתעדכן בכל 5 שניות</span>
+            </div>
+            <div className="h-[260px] md:h-[320px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={issueData} dataKey="value" nameKey="name" innerRadius={70} outerRadius={108} paddingAngle={4}>
+                    {issueData.map((entry, index) => (
+                      <Cell key={`cell-${entry.name}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => [`${value} משובים`, 'נושא']} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className={`${panelClass}`}>
+            <div className="mb-6">
+              <p className={`text-sm uppercase tracking-[0.3em] ${themeStyles.muted}`}>חלוקת דירוגים</p>
+              <h2 className="text-3xl font-black mt-2">כמות לפי דירוג</h2>
+            </div>
+            <div className="h-[320px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={ratingData} margin={{ top: 10, right: 0, left: -15, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(148,163,184,0.16)'} />
+                  <XAxis dataKey="rating" tick={{ fill: isDark ? '#cbd5e1' : '#4b5563', fontSize: 13 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: isDark ? '#cbd5e1' : '#4b5563', fontSize: 13 }} axisLine={false} tickLine={false} />
+                  <Tooltip cursor={{ fill: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)' }} formatter={(value) => [`${value} משובים`, 'כמות']} />
+                  <Bar dataKey="count" fill="#d4af37" radius={[12, 12, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </section>
+
+        {/* גרפים נוספים - מגמת דירוגים וסיכום מהיר */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className={`${panelClass}`}>
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <p className={`text-sm uppercase tracking-[0.3em] ${themeStyles.muted}`}>מגמת דירוגים</p>
+                <h2 className="text-3xl font-black mt-2">דירוגים אחרונים</h2>
+              </div>
+              <span className={`text-sm ${themeStyles.muted}`}>עדכונים חמים</span>
+            </div>
+            <div className="h-[260px] md:h-[320px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="4 4" stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(148,163,184,0.18)'} />
+                  <XAxis dataKey="label" tick={{ fill: isDark ? '#cbd5e1' : '#4b5563', fontSize: 12 }} axisLine={false} tickLine={false} interval={0} />
+                  <YAxis domain={[1, 5]} tick={{ fill: isDark ? '#cbd5e1' : '#4b5563', fontSize: 13 }} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={(value) => [`${value}★`, 'דירוג']} />
+                  <Line type="monotone" dataKey="rating" stroke="#d4af37" strokeWidth={4} dot={{ fill: '#d4af37' }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className={`${panelClass}`}>
+            <p className={`text-sm uppercase tracking-[0.3em] ${themeStyles.muted}`}>מה חדש?</p>
+            <h2 className="text-3xl font-black mt-2">סיכום מהיר</h2>
+            <div className="mt-8 space-y-4">
+              <div className={infoBoxClass}>
+                <p className={themeStyles.muted}>משובים חיוביים</p>
+                <p className="text-4xl font-black text-[#d4af37]">{positivePercent}%</p>
+              </div>
+              <div className={infoBoxClass}>
+                <p className={themeStyles.muted}>הקטגוריה המובילה</p>
+                <p className="text-2xl font-black">{bestIssue.name}</p>
+              </div>
+              <div className={infoBoxClass}>
+                <p className={themeStyles.muted}>עדכון אחרון</p>
+                <p className="text-2xl font-black">{data.feedbacks[0]?.date || 'אין נתונים'}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* רשימת משובים אחרונים */}
+        <section className={`${panelAltClass}`}>
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+            <div>
+              <p className={`text-sm uppercase tracking-[0.3em] ${themeStyles.muted}`}>ביקורות אחרונות</p>
+              <h2 className={`text-3xl font-black mt-2 ${themeStyles.card.includes('text-white') ? 'text-white' : 'text-slate-950'}`}>סקירה מהירה של נתונים חיים</h2>
+            </div>
+            <p className={themeStyles.muted}>הנתונים מתעדכנים אוטומטית ברקע.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {/* מיפוי משובים לכרטיסים */}
             {data.feedbacks.map(f => (
-              <div key={f.id} className="p-6 bg-[#fdfbf7] rounded-2xl border border-[#eee0cb] hover:shadow-lg transition-all duration-300">
-                <div className="flex justify-between items-center mb-4">
-                  <span className="font-black text-lg text-gray-900">{f.name}</span>
-                  <span className="font-black text-[#d4af37] bg-black px-3 py-1 rounded-full text-sm">⭐ {f.rating}</span>
+              <div key={f.id} className={`${themeStyles.panel} rounded-3xl p-5 shadow-lg`}>
+                <div className="flex justify-between items-start gap-3 mb-4">
+                  <div>
+                    <p className={`text-xs uppercase tracking-[0.3em] ${themeStyles.muted}`}>{f.issue}</p>
+                    <h3 className="text-xl font-black mt-2">{f.name}</h3>
+                  </div>
+                  <span className="px-3 py-2 rounded-2xl bg-[#d4af37]/15 text-[#d4af37] font-bold text-sm">{f.rating}★</span>
                 </div>
-                
-                {/* הצגת טלפון עם כפתור חיוג מהיר */}
-                <div className="flex items-center gap-3 mb-4 text-blue-700 bg-blue-50 p-3 rounded-xl border border-blue-100 font-bold">
-                  <Phone size={18} />
-                  <a href={`tel:${f.phone}`} className="text-lg hover:underline tracking-wider">{f.phone}</a>
-                </div>
-
-                <div className="bg-white p-4 rounded-xl border border-gray-100 mb-4 h-28 overflow-y-auto shadow-inner">
-                  <p className="text-gray-700 italic text-sm leading-relaxed">"{f.comment}"</p>
-                </div>
-                
-                <div className="flex justify-between items-center text-[10px] font-black uppercase text-gray-400">
-                  <span className="text-[#d4af37] bg-[#d4af37]/10 px-2 py-1 rounded">{f.issue}</span>
-                  <span>{f.date}</span>
+                <p className={`text-sm leading-relaxed mb-4 min-h-[84px] ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{f.comment}</p>
+                <div className={`flex items-center justify-between text-[11px] uppercase tracking-[0.2em] ${isDark ? 'text-slate-500' : 'text-slate-600'}`}>
+                  <span>{f.phone}</span>
+                  <span>{f.date.split(',')[0]}</span>
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       </main>
     </div>
   );
 };
 
-const StatCard = ({ title, value, color }) => (
-  <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row items-center gap-4 text-center md:text-right hover:scale-105 transition-transform">
-    <div className={`w-12 h-12 md:w-16 md:h-16 rounded-xl text-white flex items-center justify-center shadow-lg ${color} text-xl font-bold`}>
-      {title.charAt(0)}
-    </div>
+// רכיב כרטיס סטטיסטיקה
+const StatCard = ({ title, value, description, color, cardClass }) => (
+  <div className={cardClass}>
+    <div className={`w-14 h-14 rounded-3xl flex items-center justify-center shadow-lg ${color} text-white text-xl font-black`}>{title.charAt(0)}</div>
     <div>
-      <p className="text-[10px] md:text-xs font-black text-gray-400 uppercase tracking-tighter">{title}</p>
-      <h2 className="text-2xl md:text-4xl font-black text-gray-900 leading-none">{value}</h2>
+      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{title}</p>
+      <h2 className="text-3xl font-black mt-2">{value}</h2>
+      {description && <p className="mt-2 text-sm text-slate-400">{description}</p>}
     </div>
   </div>
 );
 
+// רכיב ראשי של האפליקציה
 export default function App() {
+  // הגדרת מצבים לאימות אדמין
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState(null);
 
+  // טעינת מצב אימות מה-sessionStorage
   useEffect(() => {
     const savedAuth = sessionStorage.getItem('admin-authenticated');
     const savedPassword = sessionStorage.getItem('admin-password');
@@ -260,6 +421,7 @@ export default function App() {
     }
   }, []);
 
+  // פונקציה לאימות אדמין
   const handleAdminLogin = async (password) => {
     setLoginError(null);
 
@@ -284,6 +446,7 @@ export default function App() {
     }
   };
 
+  // פונקציה ליציאה מאדמין
   const handleAdminLogout = () => {
     setAdminAuthenticated(false);
     setAdminPassword('');
@@ -292,6 +455,7 @@ export default function App() {
     sessionStorage.removeItem('admin-password');
   };
 
+  // רינדור רכיבי הניתוב
   return (
     <Router>
       <Routes>

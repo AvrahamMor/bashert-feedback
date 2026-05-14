@@ -1,3 +1,4 @@
+// ייבוא מודולים נדרשים
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -5,20 +6,22 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
+// יצירת אפליקציית Express
 const app = express();
 
+// קבלת סיסמת אדמין מהמשתנים הסביבתיים
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-// פתיחת השרת לבקשות מכל מקום (פותר את בעיית ה"אדום" ב-Console)
+// הגדרת CORS ו-JSON parsing
 app.use(cors());
 app.use(bodyParser.json());
 
-// נתיב בדיקה - כדי שנדע שהשרת עובד
+// נתיב בדיקה בסיסי
 app.get('/', (req, res) => {
     res.send('Bashert Server is Running!');
 });
 
-// נתיב לבדיקת זיכרון
+// נתיב לבדיקת שימוש בזיכרון
 app.get('/api/memory', (req, res) => {
     const mem = process.memoryUsage();
     res.json({
@@ -30,61 +33,72 @@ app.get('/api/memory', (req, res) => {
     });
 });
 
-// שמירת נתונים בזיכרון (כדי שהאתר יגיב מהר גם ב-Render)
+// שמירת נתונים בזיכרון לצורך ביצועים מהירים
 let feedbacksMemory = [];
 
-// ניסיון לקרוא נתונים קיימים אם השרת עולה מחדש
-const DB_FILE = path.join(__dirname, 'feedbacks.txt');
-if (fs.existsSync(DB_FILE)) {
-    try {
-        const data = fs.readFileSync(DB_FILE, 'utf8');
-        feedbacksMemory = data.split('\n')
-            .filter(line => line.trim() !== '')
-            .map(line => JSON.parse(line));
-        console.log(`Loaded ${feedbacksMemory.length} feedbacks from file`);
-    } catch (e) {
-        console.log("Starting with empty memory");
-    }
-}
+// נתיב לקובץ JSON של המשובים
+const JSON_DB_FILE = path.join(__dirname, 'feedbacks.json');
 
-// 1. קבלת הגדרות (למשל לינק לגוגל)
+// פונקציה לשמירת המשובים לקובץ JSON
+const saveFeedbacksToJson = (items) => {
+    try {
+        fs.writeFileSync(JSON_DB_FILE, JSON.stringify(items, null, 2), 'utf8');
+    } catch (err) {
+        console.error('Unable to save JSON database:', err.message);
+    }
+};
+
+// פונקציה לטעינת המשובים מקובץ JSON
+const loadFeedbacksFromJson = () => {
+    if (fs.existsSync(JSON_DB_FILE)) {
+        try {
+            const raw = fs.readFileSync(JSON_DB_FILE, 'utf8');
+            return JSON.parse(raw);
+        } catch (err) {
+            console.error('Unable to parse JSON database, starting empty:', err.message);
+            return [];
+        }
+    }
+    return [];
+};
+
+// טעינת המשובים מהקובץ בעת הפעלת השרת
+feedbacksMemory = loadFeedbacksFromJson();
+console.log(`Loaded ${feedbacksMemory.length} feedbacks from JSON database`);
+
+// נתיב לקבלת הגדרות (למשל קישור לגוגל)
 app.get('/api/config', (req, res) => {
-    res.json({ 
-        googleLink: "https://www.google.com/search?q=bashert+restaurant+reviews" 
+    res.json({
+        googleLink: "https://www.google.com/search?q=bashert+restaurant+reviews"
     });
 });
 
-// 2. שמירת משוב חדש (POST)
+// נתיב לשמירת משוב חדש
 app.post('/api/feedback', (req, res) => {
-    const feedback = { 
-        id: Date.now(), 
-        date: new Date().toLocaleString('he-IL'), 
+    const feedback = {
+        id: Date.now(),
+        date: new Date().toLocaleString('he-IL'),
         name: req.body.name || "אנונימי",
         phone: req.body.phone || "לא צוין",
         issue: req.body.issue || "כללי",
         comment: req.body.comment || "ללא הערה",
-        rating: req.body.rating 
+        rating: req.body.rating
     };
 
     feedbacksMemory.push(feedback);
-    
+
     // הגבלת הזיכרון - שמור רק את 1000 המשובים האחרונים
     if (feedbacksMemory.length > 1000) {
         feedbacksMemory = feedbacksMemory.slice(-1000);
     }
-    
-    // ניסיון גיבוי לקובץ (ב-Render זה זמני, אבל טוב שיהיה)
-    try {
-        fs.appendFileSync(DB_FILE, JSON.stringify(feedback) + '\n');
-    } catch (e) {
-        console.error("File save error:", e.message);
-    }
+
+    saveFeedbacksToJson(feedbacksMemory);
 
     console.log("✅ משוב חדש התקבל:", feedback.name, "דירוג:", feedback.rating);
     res.status(200).send({ message: "Success", feedback });
 });
 
-// 3. נתיב לאדמין - אימות וספק נתונים
+// נתיב לאימות אדמין
 app.post('/api/admin/login', (req, res) => {
     if (!ADMIN_PASSWORD) {
         return res.status(500).json({ message: 'Admin password not configured.' });
@@ -98,10 +112,13 @@ app.post('/api/admin/login', (req, res) => {
     res.json({ success: true });
 });
 
+// נתיב לקבלת סטטיסטיקות אדמין
 app.get('/api/admin/stats', (req, res) => {
     if (!ADMIN_PASSWORD || req.get('x-admin-password') !== ADMIN_PASSWORD) {
         return res.status(401).json({ message: 'Unauthorized' });
     }
+
+    feedbacksMemory = loadFeedbacksFromJson();
 
     const issues = { 'שירות': 0, 'אוכל': 0, 'ניקיון': 0, 'אחר': 0 };
     let sumRating = 0;
@@ -110,14 +127,6 @@ app.get('/api/admin/stats', (req, res) => {
         if (issues[f.issue] !== undefined) issues[f.issue]++;
         sumRating += f.rating;
     });
-
-    // תמיד שמור את הקובץ מחדש להיות בטוח שהוא עדכני
-    try {
-        const allFeedbacks = feedbacksMemory.map(f => JSON.stringify(f)).join('\n');
-        fs.writeFileSync(DB_FILE, allFeedbacks + (feedbacksMemory.length > 0 ? '\n' : ''));
-    } catch (e) {
-        console.error("File update error:", e.message);
-    }
 
     res.json({
         stats: {
@@ -129,7 +138,7 @@ app.get('/api/admin/stats', (req, res) => {
     });
 });
 
-// שימוש בפורט דינמי עבור Render
+// הפעלת השרת
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 השרת של באשערט באוויר בפורט ${PORT}`);
