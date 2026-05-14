@@ -1,4 +1,3 @@
-// הגדרות Vercel לפריסת האפליקציה
 {
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
