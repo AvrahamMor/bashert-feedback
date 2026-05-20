@@ -46,9 +46,12 @@ const saveFeedbacksToJson = (items) => {
         const tempFile = JSON_DB_FILE + '.tmp';
         fs.writeFileSync(tempFile, JSON.stringify(items, null, 2), 'utf8');
         fs.renameSync(tempFile, JSON_DB_FILE);
-        console.log(`✅ ${items.length} feedbacks saved to JSON`);
+        console.log(`✅ ${items.length} feedbacks saved to JSON at ${new Date().toLocaleString('he-IL')}`);
+        return true;
     } catch (err) {
-        console.error('Unable to save JSON database:', err.message);
+        console.error('❌ Unable to save JSON database:', err.message);
+        console.error('Stack trace:', err.stack);
+        return false;
     }
 };
 
@@ -75,6 +78,10 @@ if (!fs.existsSync(JSON_DB_FILE)) {
     console.warn('⚠️ feedbacks.json not found, creating new file...');
     saveFeedbacksToJson([]);
 }
+
+console.log(`📊 סטטיסטיקות זיכרון בהפעלה: ${feedbacksMemory.length} feedbacks loaded`);
+console.log(`📁 קובץ JSON ממוקם ב: ${JSON_DB_FILE}`);
+
 
 // יצירת backup אוטומטי כל 5 דקות
 setInterval(() => {
@@ -124,10 +131,23 @@ app.post('/api/feedback', (req, res) => {
             feedbacksMemory = feedbacksMemory.slice(-1000);
         }
 
-        // שמירה מיידית לקובץ
-        saveFeedbacksToJson(feedbacksMemory);
+        // שמירה מיידית לקובץ עם אימות
+        const saveSuccess = saveFeedbacksToJson(feedbacksMemory);
 
-        console.log("✅ משוב חדש התקבל:", feedback.name, "דירוג:", feedback.rating);
+        // אימות שהנתונים נשמרו
+        const verifyData = loadFeedbacksFromJson();
+        const savedFeedback = verifyData.find(f => f.id === feedback.id);
+
+        if (!saveSuccess || !savedFeedback) {
+            console.error("❌ שגיאה קריטית: המשוב לא נשמר לקובץ!");
+            return res.status(500).send({ 
+                message: "Failed to save feedback to disk",
+                feedback,
+                totalFeedbacks: feedbacksMemory.length 
+            });
+        }
+
+        console.log("✅ משוב חדש התקבל וחוסך בהצלחה:", feedback.name, "דירוג:", feedback.rating);
         res.status(200).send({ 
             message: "Success", 
             feedback,
@@ -151,6 +171,29 @@ app.post('/api/admin/login', (req, res) => {
     }
 
     res.json({ success: true });
+});
+
+// נתיב למחיקת משוב ספציפי
+app.delete('/api/admin/feedback/:id', (req, res) => {
+    if (!ADMIN_PASSWORD || req.get('x-admin-password') !== ADMIN_PASSWORD) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const feedbackId = parseInt(req.params.id);
+    const initialLength = feedbacksMemory.length;
+    feedbacksMemory = feedbacksMemory.filter(f => f.id !== feedbackId);
+
+    if (feedbacksMemory.length < initialLength) {
+        const saved = saveFeedbacksToJson(feedbacksMemory);
+        if (saved) {
+            console.log(`✅ משוב ${feedbackId} נמחק בהצלחה`);
+            return res.json({ message: 'Feedback deleted successfully', totalRemaining: feedbacksMemory.length });
+        } else {
+            return res.status(500).json({ message: 'Failed to save changes' });
+        }
+    }
+
+    res.status(404).json({ message: 'Feedback not found' });
 });
 
 // נתיב לקבלת סטטיסטיקות אדמין
@@ -197,4 +240,8 @@ app.get('/api/admin/all-feedbacks', (req, res) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 השרת של באשערט באוויר בפורט ${PORT}`);
+    console.log(`📝 משובים נשמרים ב: ${JSON_DB_FILE}`);
+    console.log(`🔄 עדכון סטטיסטיקות בפרק זמן של 5 שניות (admin)`);
+    console.log(`💾 עמוד backup נוצר כל 5 דקות`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 });

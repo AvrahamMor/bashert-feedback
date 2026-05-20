@@ -165,6 +165,7 @@ const AdminDashboard = ({ adminPassword, onLogout }) => {
   const [error, setError] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [theme, setTheme] = useState('dark');
+  const [deletingId, setDeletingId] = useState(null);
 
   // הגדרת עיצוב לפי ערכת נושא
   const isDark = theme === 'dark';
@@ -208,6 +209,32 @@ const AdminDashboard = ({ adminPassword, onLogout }) => {
       setError(err.message);
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  // פונקציה למחיקת משוב
+  const deleteFeedback = async (feedbackId) => {
+    if (!window.confirm('אתה בטוח שברצונך למחוק משוב זה?')) return;
+
+    setDeletingId(feedbackId);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/feedback/${feedbackId}`, {
+        method: 'DELETE',
+        headers: {
+          'x-admin-password': adminPassword
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete feedback');
+      }
+
+      console.log('✅ משוב נמחק בהצלחה');
+      await fetchStats(); // רענון הנתונים
+    } catch (err) {
+      alert('שגיאה בעת מחיקת המשוב: ' + err.message);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -369,13 +396,25 @@ const AdminDashboard = ({ adminPassword, onLogout }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {/* מיפוי משובים לכרטיסים */}
             {data.feedbacks.map(f => (
-              <div key={f.id} className={`${themeStyles.panel} rounded-3xl p-5 shadow-lg`}>
+              <div key={f.id} className={`${themeStyles.panel} rounded-3xl p-5 shadow-lg relative group`}>
                 <div className="flex justify-between items-start gap-3 mb-4">
                   <div>
                     <p className={`text-xs uppercase tracking-[0.3em] ${themeStyles.muted}`}>{f.issue}</p>
                     <h3 className="text-xl font-black mt-2">{f.name}</h3>
                   </div>
-                  <span className="px-3 py-2 rounded-2xl bg-[#d4af37]/15 text-[#d4af37] font-bold text-sm">{f.rating}★</span>
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-2 rounded-2xl bg-[#d4af37]/15 text-[#d4af37] font-bold text-sm">{f.rating}★</span>
+                    {f.rating <= 2 && (
+                      <button
+                        onClick={() => deleteFeedback(f.id)}
+                        disabled={deletingId === f.id}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded-lg bg-red-500/20 text-red-500 hover:bg-red-500/40 font-bold text-xs"
+                        title="מחק משוב"
+                      >
+                        {deletingId === f.id ? '🗑️ מוחק...' : '🗑️'}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <p className={`text-sm leading-relaxed mb-4 min-h-[84px] ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{f.comment}</p>
                 <div className={`flex items-center justify-between text-[11px] uppercase tracking-[0.2em] ${isDark ? 'text-slate-500' : 'text-slate-600'}`}>
