@@ -42,7 +42,11 @@ const JSON_DB_FILE = path.join(__dirname, 'feedbacks.json');
 // פונקציה לשמירת המשובים לקובץ JSON
 const saveFeedbacksToJson = (items) => {
     try {
-        fs.writeFileSync(JSON_DB_FILE, JSON.stringify(items, null, 2), 'utf8');
+        // שמירה לקובץ זמני קודם, אחרי שומצליח, החלפה
+        const tempFile = JSON_DB_FILE + '.tmp';
+        fs.writeFileSync(tempFile, JSON.stringify(items, null, 2), 'utf8');
+        fs.renameSync(tempFile, JSON_DB_FILE);
+        console.log(`✅ ${items.length} feedbacks saved to JSON`);
     } catch (err) {
         console.error('Unable to save JSON database:', err.message);
     }
@@ -66,6 +70,33 @@ const loadFeedbacksFromJson = () => {
 feedbacksMemory = loadFeedbacksFromJson();
 console.log(`Loaded ${feedbacksMemory.length} feedbacks from JSON database`);
 
+// בדיקה שהקובץ קיים ותקין
+if (!fs.existsSync(JSON_DB_FILE)) {
+    console.warn('⚠️ feedbacks.json not found, creating new file...');
+    saveFeedbacksToJson([]);
+}
+
+// יצירת backup אוטומטי כל 5 דקות
+setInterval(() => {
+    const backupFile = path.join(__dirname, `feedbacks.backup.${Date.now()}.json`);
+    try {
+        fs.copyFileSync(JSON_DB_FILE, backupFile);
+        console.log('✅ Backup created:', backupFile);
+        
+        // שמור רק את ה-5 backups האחרונים
+        const backups = fs.readdirSync(__dirname).filter(f => f.startsWith('feedbacks.backup.'));
+        if (backups.length > 5) {
+            backups.sort().slice(0, -5).forEach(f => {
+                try {
+                    fs.unlinkSync(path.join(__dirname, f));
+                } catch (e) {}
+            });
+        }
+    } catch (err) {
+        console.error('Backup failed:', err.message);
+    }
+}, 5 * 60 * 1000);
+
 // נתיב לקבלת הגדרות (למשל קישור לגוגל)
 app.get('/api/config', (req, res) => {
     res.json({
@@ -75,27 +106,37 @@ app.get('/api/config', (req, res) => {
 
 // נתיב לשמירת משוב חדש
 app.post('/api/feedback', (req, res) => {
-    const feedback = {
-        id: Date.now(),
-        date: new Date().toLocaleString('he-IL'),
-        name: req.body.name || "אנונימי",
-        phone: req.body.phone || "לא צוין",
-        issue: req.body.issue || "כללי",
-        comment: req.body.comment || "ללא הערה",
-        rating: req.body.rating
-    };
+    try {
+        const feedback = {
+            id: Date.now(),
+            date: new Date().toLocaleString('he-IL'),
+            name: req.body.name || "אנונימי",
+            phone: req.body.phone || "לא צוין",
+            issue: req.body.issue || "כללי",
+            comment: req.body.comment || "ללא הערה",
+            rating: req.body.rating
+        };
 
-    feedbacksMemory.push(feedback);
+        feedbacksMemory.push(feedback);
 
-    // הגבלת הזיכרון - שמור רק את 1000 המשובים האחרונים
-    if (feedbacksMemory.length > 1000) {
-        feedbacksMemory = feedbacksMemory.slice(-1000);
+        // הגבלת הזיכרון - שמור רק את 1000 המשובים האחרונים
+        if (feedbacksMemory.length > 1000) {
+            feedbacksMemory = feedbacksMemory.slice(-1000);
+        }
+
+        // שמירה מיידית לקובץ
+        saveFeedbacksToJson(feedbacksMemory);
+
+        console.log("✅ משוב חדש התקבל:", feedback.name, "דירוג:", feedback.rating);
+        res.status(200).send({ 
+            message: "Success", 
+            feedback,
+            totalFeedbacks: feedbacksMemory.length 
+        });
+    } catch (error) {
+        console.error("❌ שגיאה בשמירת משוב:", error.message);
+        res.status(500).send({ message: "Failed to save feedback", error: error.message });
     }
-
-    saveFeedbacksToJson(feedbacksMemory);
-
-    console.log("✅ משוב חדש התקבל:", feedback.name, "דירוג:", feedback.rating);
-    res.status(200).send({ message: "Success", feedback });
 });
 
 // נתיב לאימות אדמין
@@ -118,6 +159,7 @@ app.get('/api/admin/stats', (req, res) => {
         return res.status(401).json({ message: 'Unauthorized' });
     }
 
+    // טעינה מחדש מהקובץ כדי להבטיח נתונים עדכניים
     feedbacksMemory = loadFeedbacksFromJson();
 
     const issues = { 'שירות': 0, 'אוכל': 0, 'ניקיון': 0, 'אחר': 0 };
@@ -135,6 +177,19 @@ app.get('/api/admin/stats', (req, res) => {
             issues: issues
         },
         feedbacks: [...feedbacksMemory].reverse().slice(0, 30) // מחזיר את ה-30 האחרונים
+    });
+});
+
+// נתיב להורדת כל המשובים (לבדיקה ובדיקה)
+app.get('/api/admin/all-feedbacks', (req, res) => {
+    if (!ADMIN_PASSWORD || req.get('x-admin-password') !== ADMIN_PASSWORD) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    feedbacksMemory = loadFeedbacksFromJson();
+    res.json({
+        total: feedbacksMemory.length,
+        feedbacks: feedbacksMemory
     });
 });
 
