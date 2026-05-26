@@ -1,247 +1,72 @@
-// ייבוא מודולים נדרשים
 const express = require('express');
 const cors = require('cors');
-const bodyParser = require('body-parser');
-const fs = require('fs');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const admin = require('firebase-admin');
 
-// יצירת אפליקציית Express
 const app = express();
-
-// קבלת סיסמת אדמין מהמשתנים הסביבתיים
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-
-// הגדרת CORS ו-JSON parsing
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-// נתיב בדיקה בסיסי
-app.get('/', (req, res) => {
-    res.send('Bashert Server is Running!');
-});
-
-// נתיב לבדיקת שימוש בזיכרון
-app.get('/api/memory', (req, res) => {
-    const mem = process.memoryUsage();
-    res.json({
-        rss: `${(mem.rss / 1024 / 1024).toFixed(2)} MB`,
-        heapUsed: `${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`,
-        heapTotal: `${(mem.heapTotal / 1024 / 1024).toFixed(2)} MB`,
-        external: `${(mem.external / 1024 / 1024).toFixed(2)} MB`,
-        feedbacksCount: feedbacksMemory.length
-    });
-});
-
-// שמירת נתונים בזיכרון לצורך ביצועים מהירים
-let feedbacksMemory = [];
-
-// נתיב לקובץ JSON של המשובים
-const JSON_DB_FILE = path.join(__dirname, 'feedbacks.json');
-
-// פונקציה לשמירת המשובים לקובץ JSON
-const saveFeedbacksToJson = (items) => {
-    try {
-        // שמירה לקובץ זמני קודם, אחרי שומצליח, החלפה
-        const tempFile = JSON_DB_FILE + '.tmp';
-        fs.writeFileSync(tempFile, JSON.stringify(items, null, 2), 'utf8');
-        fs.renameSync(tempFile, JSON_DB_FILE);
-        console.log(`✅ ${items.length} feedbacks saved to JSON at ${new Date().toLocaleString('he-IL')}`);
-        return true;
-    } catch (err) {
-        console.error('❌ Unable to save JSON database:', err.message);
-        console.error('Stack trace:', err.stack);
-        return false;
-    }
+// הגדרת החיבור המאובטח ל-Firebase באמצעות המפתח שסיפקת
+const serviceAccount = {
+  "type": "service_account",
+  "project_id": "bashert-feedback",
+  "private_key_id": "3316364a637bb1520470b98281119bb787f43d15",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDHFcqtAjwpAHkb\nmXHYhySyBNluF0cos4+s6l+h83UXahBD73dpJT5aohKdp+Aka5QxBLLt+VZpX8C9\nBh820jMsoLLRZ2uk75vLHBGvZfoseSiUeHYrwVPGHWK4LqwaR992RNJXX8P8uH7l\nmGAdTMlUYIGbZ2eYJMMmZZz2DWME8TMvqm8ETEPS73iG922LyjkRygXtYJyVsT3q\nKfUwNko7nFfNvRhy6rEfy4s9SFmFaODQRwI6+NV3vO5SQKcTDjwsG6x8kPKHm+ow\n6ewb8pLHmGS4WMel+FT4AYhJOBFScX0RDc4we9/XmqKaCJHHe8AaULWUQXW/WPNn\nerd0UcShAgMBAAECggEADV00dRdYpn/2S+3/AG6sqJk+vJnUwwdatlwn/fJz18CH\nmv0w4jQH0tmyWjbyCuqAe3yPQ6j12K5UJ9wzWDYVYqze6W5XLC6Rd2RI+Pc61frE\nHe4AMMESOJMHFMoSmikHonl4N+P2f2PQe4/A/qEwRU5nz4t0yXfI9IOPB81aP53l\nvIijjVjp1NGIjZQzeE44fFcs7pRpSz/sZEu2NT/OJuPFP8muHh3RctrzJTxb7gf0\n8FMv17JiG+HwFsnUttC0Gv45Yp+0Wg+VYDTGD6ugoJ0WGbIRak6LixP5jom0S3a6\nagXhIbXbI1qRownZbC2b0f+2cSer42vXOa7ai7Sq4QKBgQDiHpp979IVYnm9+JP4\nVFHrref1Rev4guPnCHKwN+1f0fNOJ7qucRe9PIpnJyp3+o4Iu77RsXm7/23tRO/R\n7lsFCtXonfR+CoXBIZeDVEdtQvlH5FA8YKEMSwU0HzZN+AR/Ps0UqtYKU/S80OA4\nD/zzF3r4C2wz1WoS+Y1zr59dVQKBgQDhZKQXD1RT5BA99qk5wVJ4nNAvRtHeogkQ\nV4bJZQXgSTHHELc8vyQsXvu9J9/SHlr2UqwaVZ24FQhcwcn5xA9V8yqWZIqXiHT3\nYJYM0Bra8UK97pjoljpuGEdHuGJZkoAzlaPQeRlGD+eOe98eq8wT/Nlcf+dkGugW\nxLQvkCNqHQKBgEJthStcKdaYcHVrsmSwuMRI+aznlrQSF8vGgpLcS0LsFdMu/rvC\ng5vXTj2RlvtaQyGzrhJCViXxmySqLN36bQjlLwRAaxQgGT0slitBth4WH8+L9jpW\nlNlcrLGsPbLYGtIa6/qXWXv9QBe8MTKnF8N+cWSvTmFH3/qlD3Yd8O5lAoGBALN/\nUq6Kpr2ogsbWCS7VprgnKiR8YebLZCx/h/gbW/KiV+IQjdzy2/v6KMEbYEQVqJtC\ne4z9Yf2XwnEcY51lZlEstl3O9BB5u6zGXrkVgk2alWxs95lDCoVjEGEtliV/Zlmu\ncic0ScxiHiZ6v9XNO1kvpGrl8YDnbK21OUonoAyBAoGAZFBScPTK3q7so0Ib9A52\nV1nyBk/Ky7NZOWBTiz1IQOSP8JMvo2PeFiCg8/pNTE8fLli2SuDAU2rAufDG8S15\nIxf27tAYx43gdaYnbLY9jQdPA7baVeiBm5/IvUmWrWn6SCvH98FUz+2cnQH6y/rk\nVBlAHlJobZyvcnW6QfmeNM4=\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@bashert-feedback.iam.gserviceaccount.com"
 };
 
-// פונקציה לטעינת המשובים מקובץ JSON
-const loadFeedbacksFromJson = () => {
-    if (fs.existsSync(JSON_DB_FILE)) {
-        try {
-            const raw = fs.readFileSync(JSON_DB_FILE, 'utf8');
-            return JSON.parse(raw);
-        } catch (err) {
-            console.error('Unable to parse JSON database, starting empty:', err.message);
-            return [];
-        }
-    }
-    return [];
-};
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
 
-// טעינת המשובים מהקובץ בעת הפעלת השרת
-feedbacksMemory = loadFeedbacksFromJson();
-console.log(`Loaded ${feedbacksMemory.length} feedbacks from JSON database`);
+const db = admin.firestore();
+const FEEDBACKS_COLLECTION = 'feedbacks';
 
-// בדיקה שהקובץ קיים ותקין
-if (!fs.existsSync(JSON_DB_FILE)) {
-    console.warn('⚠️ feedbacks.json not found, creating new file...');
-    saveFeedbacksToJson([]);
-}
-
-console.log(`📊 סטטיסטיקות זיכרון בהפעלה: ${feedbacksMemory.length} feedbacks loaded`);
-console.log(`📁 קובץ JSON ממוקם ב: ${JSON_DB_FILE}`);
-
-
-// יצירת backup אוטומטי כל 5 דקות
-setInterval(() => {
-    const backupFile = path.join(__dirname, `feedbacks.backup.${Date.now()}.json`);
-    try {
-        fs.copyFileSync(JSON_DB_FILE, backupFile);
-        console.log('✅ Backup created:', backupFile);
-        
-        // שמור רק את ה-5 backups האחרונים
-        const backups = fs.readdirSync(__dirname).filter(f => f.startsWith('feedbacks.backup.'));
-        if (backups.length > 5) {
-            backups.sort().slice(0, -5).forEach(f => {
-                try {
-                    fs.unlinkSync(path.join(__dirname, f));
-                } catch (e) {}
-            });
-        }
-    } catch (err) {
-        console.error('Backup failed:', err.message);
-    }
-}, 5 * 60 * 1000);
-
-// נתיב לקבלת הגדרות (למשל קישור לגוגל)
-app.get('/api/config', (req, res) => {
-    res.json({
-        googleLink: "https://www.google.com/search?q=bashert+restaurant+reviews"
+// 1. קבלת כל המשובים (עבור דף הניהול שלך)
+app.get('/api/feedbacks', async (req, res) => {
+  try {
+    const snapshot = await db.collection(FEEDBACKS_COLLECTION).orderBy('createdAt', 'desc').get();
+    const feedbacks = [];
+    snapshot.forEach(doc => {
+      feedbacks.push({ id: doc.id, ...doc.data() });
     });
+    res.json(feedbacks);
+  } catch (error) {
+    console.error('Error fetching feedbacks:', error);
+    res.status(500).json({ error: 'Failed to fetch feedbacks' });
+  }
 });
 
-// נתיב לשמירת משוב חדש
-app.post('/api/feedback', (req, res) => {
-    try {
-        const feedback = {
-            id: Date.now(),
-            date: new Date().toLocaleString('he-IL'),
-            name: req.body.name || "אנונימי",
-            phone: req.body.phone || "לא צוין",
-            issue: req.body.issue || "כללי",
-            comment: req.body.comment || "ללא הערה",
-            rating: req.body.rating
-        };
-
-        feedbacksMemory.push(feedback);
-
-        // הגבלת הזיכרון - שמור רק את 1000 המשובים האחרונים
-        if (feedbacksMemory.length > 1000) {
-            feedbacksMemory = feedbacksMemory.slice(-1000);
-        }
-
-        // שמירה מיידית לקובץ עם אימות
-        const saveSuccess = saveFeedbacksToJson(feedbacksMemory);
-
-        // אימות שהנתונים נשמרו
-        const verifyData = loadFeedbacksFromJson();
-        const savedFeedback = verifyData.find(f => f.id === feedback.id);
-
-        if (!saveSuccess || !savedFeedback) {
-            console.error("❌ שגיאה קריטית: המשוב לא נשמר לקובץ!");
-            return res.status(500).send({ 
-                message: "Failed to save feedback to disk",
-                feedback,
-                totalFeedbacks: feedbacksMemory.length 
-            });
-        }
-
-        console.log("✅ משוב חדש התקבל וחוסך בהצלחה:", feedback.name, "דירוג:", feedback.rating);
-        res.status(200).send({ 
-            message: "Success", 
-            feedback,
-            totalFeedbacks: feedbacksMemory.length 
-        });
-    } catch (error) {
-        console.error("❌ שגיאה בשמירת משוב:", error.message);
-        res.status(500).send({ message: "Failed to save feedback", error: error.message });
-    }
-});
-
-// נתיב לאימות אדמין
-app.post('/api/admin/login', (req, res) => {
-    if (!ADMIN_PASSWORD) {
-        return res.status(500).json({ message: 'Admin password not configured.' });
+// 2. שמירת משוב חדש (כשלשקוח ממלא את הטופס)
+app.post('/api/feedbacks', async (req, res) => {
+  try {
+    const { name, phone, foodRating, serviceRating, cleanRating, generalRating, comment } = req.body;
+    
+    if (!foodRating || !serviceRating || !cleanRating || !generalRating) {
+      return res.status(400).json({ error: 'All ratings are required' });
     }
 
-    const password = req.body.password;
-    if (!password || password !== ADMIN_PASSWORD) {
-        return res.status(401).json({ message: 'Invalid admin password.' });
-    }
+    const newFeedback = {
+      name: name || 'אנונימי',
+      phone: phone || '',
+      foodRating: Number(foodRating),
+      serviceRating: Number(serviceRating),
+      cleanRating: Number(cleanRating),
+      generalRating: Number(generalRating),
+      comment: comment || '',
+      createdAt: new Date().toISOString()
+    };
 
-    res.json({ success: true });
-});
-
-// נתיב למחיקת משוב ספציפי
-app.delete('/api/admin/feedback/:id', (req, res) => {
-    if (!ADMIN_PASSWORD || req.get('x-admin-password') !== ADMIN_PASSWORD) {
-        return res.status(401).json({ message: 'Unauthorized' });
-    }
-
-    const feedbackId = parseInt(req.params.id);
-    const initialLength = feedbacksMemory.length;
-    feedbacksMemory = feedbacksMemory.filter(f => f.id !== feedbackId);
-
-    if (feedbacksMemory.length < initialLength) {
-        const saved = saveFeedbacksToJson(feedbacksMemory);
-        if (saved) {
-            console.log(`✅ משוב ${feedbackId} נמחק בהצלחה`);
-            return res.json({ message: 'Feedback deleted successfully', totalRemaining: feedbacksMemory.length });
-        } else {
-            return res.status(500).json({ message: 'Failed to save changes' });
-        }
-    }
-
-    res.status(404).json({ message: 'Feedback not found' });
-});
-
-// נתיב לקבלת סטטיסטיקות אדמין
-app.get('/api/admin/stats', (req, res) => {
-    if (!ADMIN_PASSWORD || req.get('x-admin-password') !== ADMIN_PASSWORD) {
-        return res.status(401).json({ message: 'Unauthorized' });
-    }
-
-    // טעינה מחדש מהקובץ כדי להבטיח נתונים עדכניים
-    feedbacksMemory = loadFeedbacksFromJson();
-
-    const issues = { 'שירות': 0, 'אוכל': 0, 'ניקיון': 0, 'אחר': 0 };
-    let sumRating = 0;
-
-    feedbacksMemory.forEach(f => {
-        if (issues[f.issue] !== undefined) issues[f.issue]++;
-        sumRating += f.rating;
-    });
-
-    res.json({
-        stats: {
-            total: feedbacksMemory.length,
-            avgRating: feedbacksMemory.length ? (sumRating / feedbacksMemory.length).toFixed(1) : 0,
-            issues: issues
-        },
-        feedbacks: [...feedbacksMemory].reverse().slice(0, 30) // מחזיר את ה-30 האחרונים
-    });
-});
-
-// נתיב להורדת כל המשובים (לבדיקה ובדיקה)
-app.get('/api/admin/all-feedbacks', (req, res) => {
-    if (!ADMIN_PASSWORD || req.get('x-admin-password') !== ADMIN_PASSWORD) {
-        return res.status(401).json({ message: 'Unauthorized' });
-    }
-
-    feedbacksMemory = loadFeedbacksFromJson();
-    res.json({
-        total: feedbacksMemory.length,
-        feedbacks: feedbacksMemory
-    });
+    const docRef = await db.collection(FEEDBACKS_COLLECTION).add(newFeedback);
+    res.status(201).json({ message: 'Feedback saved successfully!', id: docRef.id });
+  } catch (error) {
+    console.error('Error saving feedback:', error);
+    res.status(500).json({ error: 'Failed to save feedback' });
+  }
 });
 
 // הפעלת השרת
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`🚀 השרת של באשערט באוויר בפורט ${PORT}`);
-    console.log(`📝 משובים נשמרים ב: ${JSON_DB_FILE}`);
-    console.log(`🔄 עדכון סטטיסטיקות בפרק זמן של 5 שניות (admin)`);
-    console.log(`💾 עמוד backup נוצר כל 5 דקות`);
-    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`🚀 Bashert Firebase Server running on port ${PORT}`);
 });
