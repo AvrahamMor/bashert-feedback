@@ -83,7 +83,7 @@ const CustomerView = () => {
     
     setIsSending(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/feedback`, {
+      const response = await fetch(`${API_BASE_URL}/api/feedbacks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...formData, rating })
