@@ -9,7 +9,7 @@ const COLORS = ['#d4af37', '#1a1a1a', '#4a4a4a', '#8e8e8e'];
 // הקישור הישיר לביקורות גוגל
 const GOOGLE_REVIEWS_URL = "https://www.google.com/search?sca_esv=26102ee7b85ee816&authuser=1&biw=402&bih=684&sxsrf=ANbL-n6w7b4vo5--ApxB7i_QQZDT-MgOHA:1772452874863&q=%D7%91%D7%99%D7%A7%D7%95%D7%A8%D7%95%D7%AA+%D7%A2%D7%9C+%D7%91%D7%90%D7%A9%D7%A2%D7%A8%D7%98+%D7%A6%D7%A4%D7%AA&uds=ALYpb_maNyHQLHL0ydCZCaDrUGBX-w8GnUmnjWyNt36DCD_nY8KVGTOU6vHCA4dmbbGJAXNQ9abiTBFGJETZXf_iHhsr-b9BynDHp1lM5HQBI8bx9Pi98l_40FAHv0D-1O-H8_6l9GbxAwn3lIHjMB0WgPiocBc1fBFCozvhR5lBesT0pBan0JiHZkottX-mWwkwLghYVV4eFKqgHw0CpumCoExECnTbua5GYCgoTPUNEdNR9USOLSyCteXiAwDYwkr5BoTx4GIDAtlNX3224Nu6T-RYXzeKmWGWJEcsh_86f3WxaARw4uCirBnTupiUEBZCAG0E1xtgbzcxsO5qKn5kThpGwRX1gE47SNMdyCZGrpCoqzlJL7e5euAU2yM3Ixvs9VrKB8GQ35pcFHt6DFiCBA4-dJw5OMg02GR1DJnhPY_jQWbwVIjCWjp4N9iEGt46zzLPTZKuhXLF2DlFA9RzTV8jg9-r_KayulUtJABg9wYnkN6mllNAcpl0-XteaybBFycYBW0WQUkjgXatUSgFQC4addAv3Q&si=AL3DRZEsmMGCryMMFSHJ3StBhOdZ2-6yYkXd_doETEE1OR-qORDrvfHHAhA8MwBJ8bPbpvEFP7erOXeDrsDSovldQKd1XQ1bVthraUr1g6u8CUzJPCxayH2PKzcf3SaJTqNQxg97htRw4XXOtIfH7Ahn-XqtoJP_ZA%3D%3D&sa=X&ved=2ahUKEwin2vK_lYGTAxWARP4FHTSXKZsQk8gLegQIGhAB&ictx=1#ebo=1";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = "https://bashert-feedback.onrender.com";
 
 const AdminLogin = ({ onLogin, error }) => {
   const [password, setPassword] = useState('');
