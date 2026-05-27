@@ -6,7 +6,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// הגדרת החיבור המאובטח ל-Firebase באמצעות המפתח שסיפקת
+// סיסמת מנהל ללוח הבקרה (תוכל לשנות אותה כאן למה שתרצה)
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '123456';
+
+// הגדרת החיבור המאובטח ל-Firebase
 const serviceAccount = {
   "type": "service_account",
   "project_id": "bashert-feedback",
@@ -22,38 +25,33 @@ admin.initializeApp({
 const db = admin.firestore();
 const FEEDBACKS_COLLECTION = 'feedbacks';
 
-// 1. קבלת כל המשובים (עבור דף הניהול שלך)
-app.get('/api/feedbacks', async (req, res) => {
-  try {
-    const snapshot = await db.collection(FEEDBACKS_COLLECTION).orderBy('createdAt', 'desc').get();
-    const feedbacks = [];
-    snapshot.forEach(doc => {
-      feedbacks.push({ id: doc.id, ...doc.data() });
-    });
-    res.json(feedbacks);
-  } catch (error) {
-    console.error('Error fetching feedbacks:', error);
-    res.status(500).json({ error: 'Failed to fetch feedbacks' });
+// Middleware לבדיקת אבטחה של האדמין
+const authenticateAdmin = (req, res, next) => {
+  const password = req.headers['x-admin-password'];
+  if (password === ADMIN_PASSWORD) {
+    next();
+  } else {
+    res.status(401).json({ message: 'Unauthorized' });
   }
-});
+};
 
-// 2. שמירת משוב חדש (כשלשקוח ממלא את הטופס)
+// --- 1. נתיב שמירת משוב חדש (תואם לאתר הלקוח) ---
 app.post('/api/feedbacks', async (req, res) => {
   try {
-    const { name, phone, foodRating, serviceRating, cleanRating, generalRating, comment } = req.body;
+    // השרת מושך רק את מה שהאתר שולח: דירוג אחד ונושא
+    const { name, phone, issue, comment, rating } = req.body;
     
-    if (!foodRating || !serviceRating || !cleanRating || !generalRating) {
-      return res.status(400).json({ error: 'All ratings are required' });
+    if (!rating) {
+      return res.status(400).json({ error: 'Rating is required' });
     }
 
     const newFeedback = {
       name: name || 'אנונימי',
       phone: phone || '',
-      foodRating: Number(foodRating),
-      serviceRating: Number(serviceRating),
-      cleanRating: Number(cleanRating),
-      generalRating: Number(generalRating),
+      issue: issue || 'כללי',
+      rating: Number(rating),
       comment: comment || '',
+      date: new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' }),
       createdAt: new Date().toISOString()
     };
 
@@ -62,6 +60,62 @@ app.post('/api/feedbacks', async (req, res) => {
   } catch (error) {
     console.error('Error saving feedback:', error);
     res.status(500).json({ error: 'Failed to save feedback' });
+  }
+});
+
+// --- 2. נתיב התחברות ללוח הבקרה ---
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password === ADMIN_PASSWORD) {
+    res.status(200).json({ message: 'Login successful' });
+  } else {
+    res.status(401).json({ message: 'Invalid password' });
+  }
+});
+
+// --- 3. נתיב קבלת נתונים ללוח הבקרה (סטטיסטיקות + גרפים) ---
+app.get('/api/admin/stats', authenticateAdmin, async (req, res) => {
+  try {
+    const snapshot = await db.collection(FEEDBACKS_COLLECTION).orderBy('createdAt', 'desc').get();
+    const feedbacks = [];
+    snapshot.forEach(doc => {
+      feedbacks.push({ id: doc.id, ...doc.data() });
+    });
+
+    // חישוב אוטומטי של הסטטיסטיקות עבור דף האדמין שלך
+    const total = feedbacks.length;
+    const avgRating = total > 0 ? (feedbacks.reduce((sum, f) => sum + f.rating, 0) / total).toFixed(1) : 0;
+    
+    const issuesCount = {
+      'שירות': feedbacks.filter(f => f.issue === 'שירות').length,
+      'אוכל': feedbacks.filter(f => f.issue === 'אוכל').length,
+      'ניקיון': feedbacks.filter(f => f.issue === 'ניקיון').length,
+      'אחר': feedbacks.filter(f => f.issue === 'אחר' || f.issue === 'כללי').length
+    };
+
+    res.json({
+      stats: {
+        total,
+        avgRating: Number(avgRating),
+        issues: issuesCount
+      },
+      feedbacks
+    });
+  } catch (error) {
+    console.error('Error fetching admin stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+// --- 4. נתיב מחיקת משוב ---
+app.delete('/api/admin/feedback/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.collection(FEEDBACKS_COLLECTION).doc(id).delete();
+    res.status(200).json({ message: 'Feedback deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting feedback:', error);
+    res.status(500).json({ error: 'Failed to delete feedback' });
   }
 });
 
